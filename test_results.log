@@ -1,0 +1,9 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.9, pytest-9.2.0, pluggy-1.7.0 -- G:\Python\Quantum-Controller\qcvenv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: G:\Python\Quantum-Controller
+collecting ... collected 1 item
+
+test/test_microscope.py::TestMicroScope::test_microscope_initialization PASSED [100%]
+
+============================== 1 passed in 0.02s ==============================
