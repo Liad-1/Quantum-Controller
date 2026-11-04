@@ -1,6 +1,6 @@
-./qcvenv
-./src/__pycache__
-./test/__pycache__
-./.pytest_cache
-./.vscode
-./test_results.log
+qcvenv
+src/__pycache__
+test/__pycache__
+.pytest_cache
+.vscode
+test_results.log
