@@ -1,0 +1,10 @@
+{
+  "[python]": {
+    "editor.semanticHighlighting.enabled": true,
+    "editor.semanticTokenColorCustomizations": {
+      "rules": {
+        "variable": "#569CD6"
+      }
+    }
+  }
+}
