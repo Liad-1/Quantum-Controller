@@ -1,10 +1,10 @@
 from src.microscope import MicroScope
+from pycromanager import Core
 
 class TestMicroScope:
     def test_microscope_initialization(self):
         # Test the initialization of the microscope object
         microscope = MicroScope()
-        assert microscope is not None
         assert isinstance(microscope, MicroScope)
 
     # def test_microscope_adjust_focus(self):
