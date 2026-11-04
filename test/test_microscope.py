@@ -1,5 +1,4 @@
 from src.microscope import MicroScope
-from pycromanager import Core
 
 class TestMicroScope:
     def test_microscope_initialization(self):
