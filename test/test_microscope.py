@@ -1,4 +1,4 @@
-from src.microscope import MicroScope
+from src import MicroScope
 
 class TestMicroScope:
     def test_microscope_initialization(self):
