@@ -1,11 +1,18 @@
-from pycromanager import start_headless, stop_headless
-from src.globals import MM_SOURCE, CONFIG
+import argparse
 
-start_headless(MM_SOURCE, CONFIG, python_backend=True)
+from pycromanager import start_headless, stop_headless
+from microscope import MicroScope
+from globals import MM_SOURCE, CONFIGS
+
+parser = argparse.ArgumentParser(description="Run the microscope controller.")
+parser.add_argument("hardware", choices=sorted(CONFIGS), help="Which Micro-Manager config to load.")
+args = parser.parse_args()
+
+start_headless(MM_SOURCE, CONFIGS[args.hardware], python_backend=True)
 
 try:
-    pass
+    MicroScope()._get_property("Camera", "NoSuchProp")
 except Exception as e:
-    pass
+    raise e
 finally:
     stop_headless()

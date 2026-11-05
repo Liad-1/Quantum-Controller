@@ -1,4 +1,29 @@
-from src.microscope import MicroScope
+import pytest
+
+from src import MicroScope
+from src.microscope import HardwareError, MicroscopeError
+
+
+class TestGetProperty:
+    def test_reads_demo_property_as_string(self) -> None:
+        value = MicroScope()._get_property("Camera", "Exposure")
+        assert isinstance(value, str)
+        assert float(value) > 0
+
+    def test_unknown_device_raises_hardware_error(self) -> None:
+        with pytest.raises(HardwareError) as exc_info:
+            MicroScope()._get_property("NoSuchDevice", "x")
+        error = exc_info.value
+        assert isinstance(error, MicroscopeError)
+        assert error.label == "NoSuchDevice"
+        assert error.prop == "x"
+        assert isinstance(error.__cause__, RuntimeError)
+
+    def test_unknown_property_raises_hardware_error(self) -> None:
+        with pytest.raises(HardwareError) as exc_info:
+            MicroScope()._get_property("Camera", "NoSuchProp")
+        assert exc_info.value.prop == "NoSuchProp"
+
 
 class TestMicroScope:
     def test_microscope_initialization(self):
