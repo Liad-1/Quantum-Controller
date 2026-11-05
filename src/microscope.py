@@ -1,6 +1,5 @@
 from pycromanager import Core
 
-core = Core()
 class MicroScope:
     
     def __init__(self):
