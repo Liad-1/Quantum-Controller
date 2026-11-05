@@ -8,6 +8,10 @@ on:
 jobs:
   demo:
     runs-on: windows-latest
+    env:
+      # Same nightly build as the local install. If you upgrade pymmcore in requirements.txt,
+      # pick a Micro-Manager nightly whose device interface matches it and update this name.
+      MM_INSTALLER: MMSetup_64bit_2.0.3_20261103.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -21,6 +25,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Cache Micro-Manager installer
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\mm-installer
+          key: mm-${{ env.MM_INSTALLER }}
+
+      - name: Install Micro-Manager
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = "$env:RUNNER_TEMP\mm-installer"
+          $exe = "$dir\$env:MM_INSTALLER"
+          if (-not (Test-Path $exe)) {
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            Invoke-WebRequest "https://download.micro-manager.org/nightly/2.0/Windows/$env:MM_INSTALLER" -OutFile $exe
+          }
+          Start-Process $exe -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/DIR="C:\Program Files\Micro-Manager-2.0"'
+          if (-not (Test-Path "C:\Program Files\Micro-Manager-2.0\MMConfig_demo.cfg")) {
+            throw "Micro-Manager install failed: MMConfig_demo.cfg not found"
+          }
 
       - name: Run tests
         run: python -m pytest -v --hardware demo
