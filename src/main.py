@@ -1,11 +1,12 @@
 from pycromanager import start_headless, stop_headless
-from src.globals import MM_SOURCE, CONFIG
+from microscope import MicroScope
+from globals import MM_SOURCE, CONFIG
 
 start_headless(MM_SOURCE, CONFIG, python_backend=True)
 
 try:
-    pass
+    MicroScope()._get_property("Camera", "NoSuchProp")
 except Exception as e:
-    pass
+    raise e
 finally:
     stop_headless()
