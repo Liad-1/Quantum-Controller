@@ -12,7 +12,6 @@ start_headless(MM_SOURCE, CONFIGS[args.hardware], python_backend=True)
 
 try:
     microscope = MicroScope()
-    microscope.print_devices()
 except Exception as e:
     raise e
 finally:

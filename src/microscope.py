@@ -1,10 +1,9 @@
 import logging
 
 from pycromanager import Core
+from globals import READ_ONLY_TAG
 
 logger = logging.getLogger(__name__)
-
-READ_ONLY_TAG = "(read-only)"
 
 
 class MicroscopeError(Exception):
