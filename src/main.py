@@ -1,7 +1,7 @@
 import argparse
 
 from pycromanager import start_headless, stop_headless
-from microscope import MicroScope
+from src.microscope import MicroScope
 from globals import MM_SOURCE, CONFIGS
 
 parser = argparse.ArgumentParser(description="Run the microscope controller.")

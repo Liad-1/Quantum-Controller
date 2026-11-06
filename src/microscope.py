@@ -1,7 +1,7 @@
 import logging
 
 from pycromanager import Core
-from globals import READ_ONLY_TAG
+from src.globals import READ_ONLY_TAG
 
 logger = logging.getLogger(__name__)
 
