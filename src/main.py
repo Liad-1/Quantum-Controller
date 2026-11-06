@@ -11,7 +11,8 @@ args = parser.parse_args()
 start_headless(MM_SOURCE, CONFIGS[args.hardware], python_backend=True)
 
 try:
-    MicroScope()._get_property("Camera", "NoSuchProp")
+    microscope = MicroScope()
+    microscope.print_devices()
 except Exception as e:
     raise e
 finally:

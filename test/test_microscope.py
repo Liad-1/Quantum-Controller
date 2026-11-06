@@ -1,7 +1,7 @@
 import pytest
 
 from src import MicroScope
-from src.microscope import HardwareError, MicroscopeError
+from src.microscope import READ_ONLY_TAG, HardwareError, MicroscopeError
 
 
 class TestGetProperty:
@@ -23,6 +23,43 @@ class TestGetProperty:
         with pytest.raises(HardwareError) as exc_info:
             MicroScope()._get_property("Camera", "NoSuchProp")
         assert exc_info.value.prop == "NoSuchProp"
+
+
+class TestDescribeDevices:
+    def test_lists_every_loaded_device(self) -> None:
+        microscope = MicroScope()
+        report = microscope.describe_devices()
+        for label in microscope.devices:
+            assert label in report
+
+    def test_read_only_properties_are_tagged(self) -> None:
+        microscope = MicroScope()
+        sections = microscope.describe_devices().split("\n\n")
+        core = microscope.core
+        for label, section in zip(microscope.devices, sections):
+            lines = section.splitlines()[1:]
+            for prop, line in zip(core.getDevicePropertyNames(label), lines):
+                assert line.strip().startswith(prop)
+                assert (READ_ONLY_TAG in line) == core.isPropertyReadOnly(label, prop)
+
+    def test_writable_property_shows_allowed_values(self) -> None:
+        microscope = MicroScope()
+        report = microscope.describe_devices()
+        assert "allowed: " in report
+
+    def test_describe_allowed_list(self) -> None:
+        microscope = MicroScope()
+        allowed = list(microscope.core.getAllowedPropertyValues("Camera", "Binning"))
+        assert microscope._describe_allowed("Camera", "Binning") == "[" + ", ".join(allowed) + "]"
+
+    def test_describe_allowed_range_or_any(self) -> None:
+        result = MicroScope()._describe_allowed("Camera", "Exposure")
+        assert result.startswith("range ") or result == "any"
+
+    def test_print_devices_prints_report(self, capsys: pytest.CaptureFixture[str]) -> None:
+        microscope = MicroScope()
+        microscope.print_devices()
+        assert capsys.readouterr().out.strip() == microscope.describe_devices().strip()
 
 
 class TestMicroScope:
