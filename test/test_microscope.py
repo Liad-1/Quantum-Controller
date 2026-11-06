@@ -1,6 +1,6 @@
 import pytest
 
-from src import MicroScope
+from src.microscope import MicroScope
 from src.microscope import READ_ONLY_TAG, HardwareError, MicroscopeError
 
 
