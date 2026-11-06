@@ -66,7 +66,7 @@ class TestMicroScope:
     def test_microscope_initialization(self):
         # Test the initialization of the microscope object
         microscope = MicroScope()
-        assert isinstance(microscope, int)
+        assert isinstance(microscope, MicroScope)
 
     # def test_microscope_adjust_focus(self):
     #     # Test adjusting the focus of the microscope
