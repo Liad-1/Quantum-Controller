@@ -6,7 +6,9 @@ on:
     branches: [ "main" ]
 
 jobs:
+  # Demo hardware: every push to a branch other than main.
   demo:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
     runs-on: windows-latest
     env:
       # Same nightly build as the local install. If you upgrade pymmcore in requirements.txt,
@@ -50,11 +52,10 @@ jobs:
       - name: Run tests
         run: python -m pytest -v --hardware demo
 
-  # Runs on the lab PC connected to the microscope (a self-hosted runner with the "microscope" label).
-  # Runs for pull requests into main (so it can block the merge) and for pushes to main.
+  # Real hardware: runs on the lab PC connected to the microscope (a self-hosted runner with the
+  # "microscope" label), for pull requests into main (so it can block the merge) and for merges/pushes to main.
   real:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    needs: demo
     runs-on: [ self-hosted, windows, microscope ]
     steps:
       - uses: actions/checkout@v4
