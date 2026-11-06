@@ -1,0 +1,27 @@
+#!/bin/sh
+# Block pushes to any branch other than main unless the test suite passes locally (demo hardware).
+# Enable once per clone with:  git config core.hooksPath .githooks
+# Bypass in an emergency with: git push --no-verify
+
+zero="0000000000000000000000000000000000000000"
+needs_tests=0
+
+# git feeds one line per ref being pushed: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue          # branch deletion, nothing to test
+    case "$remote_ref" in
+        refs/heads/main) ;;                          # main is gated by CI on real hardware
+        refs/heads/*) needs_tests=1 ;;
+    esac
+done
+
+[ "$needs_tests" -eq 0 ] && exit 0
+
+echo "[pre-push] Running tests against demo hardware..."
+if python -m pytest -q --hardware demo; then
+    echo "[pre-push] Tests passed, pushing."
+    exit 0
+fi
+
+echo "[pre-push] Tests failed, push aborted." >&2
+exit 1
