@@ -1,61 +1,16 @@
 name: Python Tests
+
+# Demo-hardware tests run locally before every push to a non-main branch (see .githooks/pre-push).
+# CI only tests on the real microscope: on pull requests into main (to block a bad merge) and on main itself.
 on:
   push:
-    branches: [ "**" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
-  # Demo hardware: every push to a branch other than main.
-  demo:
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
-    runs-on: windows-latest
-    env:
-      # Same nightly build as the local install. If you upgrade pymmcore in requirements.txt,
-      # pick a Micro-Manager nightly whose device interface matches it and update this name.
-      MM_INSTALLER: MMSetup_64bit_2.0.3_20261103.exe
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10.9'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Cache Micro-Manager installer
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}\mm-installer
-          key: mm-${{ env.MM_INSTALLER }}
-
-      - name: Install Micro-Manager
-        shell: pwsh
-        run: |
-          $ProgressPreference = 'SilentlyContinue'
-          $dir = "$env:RUNNER_TEMP\mm-installer"
-          $exe = "$dir\$env:MM_INSTALLER"
-          if (-not (Test-Path $exe)) {
-            New-Item -ItemType Directory -Force $dir | Out-Null
-            Invoke-WebRequest "https://download.micro-manager.org/nightly/2.0/Windows/$env:MM_INSTALLER" -OutFile $exe
-          }
-          Start-Process $exe -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/DIR="C:\Program Files\Micro-Manager-2.0"'
-          if (-not (Test-Path "C:\Program Files\Micro-Manager-2.0\MMConfig_demo.cfg")) {
-            throw "Micro-Manager install failed: MMConfig_demo.cfg not found"
-          }
-
-      - name: Run tests
-        run: python -m pytest -v --hardware demo
-
-  # Real hardware: runs on the lab PC connected to the microscope (a self-hosted runner with the
-  # "microscope" label), for pull requests into main (so it can block the merge) and for merges/pushes to main.
+  # Runs on the lab PC connected to the microscope (a self-hosted runner with the "microscope" label).
   real:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: [ self-hosted, windows, microscope ]
     steps:
       - uses: actions/checkout@v4
