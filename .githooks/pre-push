@@ -18,10 +18,11 @@ done
 [ "$needs_tests" -eq 0 ] && exit 0
 
 echo "[pre-push] Running tests against demo hardware..."
-if python -m pytest -q --hardware demo; then
+# --tb=line: one line per failure saying where and why; -rfE: list failed/errored tests at the end.
+if python -m pytest -q --hardware demo --tb=line -rfE; then
     echo "[pre-push] All tests passed successfully - pushing to cloud repo"
     exit 0
 fi
 
-echo "[pre-push] Tests failed, push aborted." >&2
+echo "[pre-push] Tests failed (see the summary above) - push aborted." >&2
 exit 1
