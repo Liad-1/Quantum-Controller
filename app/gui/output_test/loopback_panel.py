@@ -12,7 +12,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from app.hardware.loopback import format_table, run_loopback
-from app.plotting.compare import LiveComparison, plot_comparison
+from app.plotting.compare import TIME, VIEWS, LiveComparison, plot_comparison
 
 OVERSAMPLE = 10  # AI samples recorded per AO sample
 POLL_MS = 100    # how often the GUI draws new data / checks for the end
@@ -42,9 +42,16 @@ class LoopbackPanel(ttk.LabelFrame):
                   ).pack(anchor="w")
         self.run_button = ttk.Button(self, text="Run", command=self.start)
         self.run_button.pack(fill="x", pady=(8, 4))
-        self.remove_fit = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self, text="Remove gain/offset from the difference",
-                        variable=self.remove_fit, command=self._redraw).pack(anchor="w")
+        self.view = tk.StringVar(value=TIME)
+        view_row = ttk.Frame(self)
+        view_row.pack(anchor="w")
+        ttk.Label(view_row, text="View:").pack(side="left")
+        self.view_buttons = [
+            ttk.Radiobutton(view_row, text=name, value=name, variable=self.view,
+                            command=self._redraw)
+            for name in VIEWS]
+        for button in self.view_buttons:
+            button.pack(side="left", padx=(6, 0))
         self.results = ttk.Label(self, text="", style="Status.TLabel",
                                  justify="left", font=("Consolas", 9))
         self.results.pack(anchor="w", pady=(6, 0))
@@ -76,7 +83,9 @@ class LoopbackPanel(ttk.LabelFrame):
         self._outcome = None
         self._chunks = chunks
         self._live = LiveComparison(self.figure, self.canvas, waveform, rate, OVERSAMPLE,
+                                    view=self.view.get(),
                                     sent_labels=(f"ao0 - {ao0_name}", f"ao1 - {ao1_name}"))
+        self._set_view_buttons(False)  # the live plot is built for one view
         self.results.configure(text="")
         self._duration = len(waveform) / rate
         self._worker = threading.Thread(target=work, daemon=True)
@@ -91,6 +100,7 @@ class LoopbackPanel(ttk.LabelFrame):
             self._worker.join()
             self._worker = None
             self.run_button.configure(text="Run")
+            self._set_view_buttons(True)
             self.session.set_busy(False)
 
     def _draw_live(self):
@@ -118,6 +128,7 @@ class LoopbackPanel(ttk.LabelFrame):
         self._worker = None
         self._live = None
         self.run_button.configure(text="Run")
+        self._set_view_buttons(True)
         self.session.set_busy(False)
 
         kind, value = self._outcome
@@ -136,9 +147,8 @@ class LoopbackPanel(ttk.LabelFrame):
             return
         result, ao0_name, ao1_name = self._last
         self.figure.clear()
-        plot_comparison(self.figure, result,
-                        sent_labels=(f"ao0 - {ao0_name}", f"ao1 - {ao1_name}"),
-                        remove_fit=self.remove_fit.get())
+        plot_comparison(self.figure, result, view=self.view.get(),
+                        sent_labels=(f"ao0 - {ao0_name}", f"ao1 - {ao1_name}"))
         self.figure.tight_layout()
         self.canvas.draw()
 
@@ -150,6 +160,10 @@ class LoopbackPanel(ttk.LabelFrame):
                 ha="center", va="center", color="#666", transform=ax.transAxes)
         ax.set_axis_off()
         self.canvas.draw()
+
+    def _set_view_buttons(self, enabled):
+        for button in self.view_buttons:
+            button.state(["!disabled"] if enabled else ["disabled"])
 
     def _update(self):
         self.run_button.state(["!disabled"] if self.session.ready else ["disabled"])
