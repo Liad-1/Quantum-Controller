@@ -14,9 +14,21 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.gui.app import App  # noqa: E402
+from app.waveforms.raster import ScanConfigError, get_scan  # noqa: E402
 
 
 def main():
+    try:
+        get_scan()  # check the scan grid before any window opens
+    except ScanConfigError as err:
+        # The scan grid needs more voltage than the outputs allow: don't start
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Scan settings", str(err))
+        root.destroy()
+        sys.exit(1)
     App().mainloop()
 
 

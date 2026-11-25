@@ -2,15 +2,26 @@
 LoopbackPanel: send the configured signal, record it back, show the result.
 
 The test itself is app.hardware.loopback.run_loopback; this panel runs it in
-a worker thread, draws the recording live as it arrives (LiveComparison), and
-then shows the final LoopbackResult (table + plot).
+a worker thread, draws the recording live (LiveComparison), and then shows
+the final LoopbackResult (table + plot).
+
+The live view plays the recording back rather than drawing whatever has
+arrived: the real myDAQ delivers data in bursts (the first ~0.8 s is held
+back to line up the recording), which would jump over whole scan lines.
+Playback starts once PREBUFFER_S has arrived and then either
+* shows one output sample every LIVE_POINT_MS (config.py, slow motion, so
+  every point is seen; the Run button skips to the end once recording is
+  done), or
+* with LIVE_POINT_MS = 0, runs at the recording's own speed.
 """
 
 import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from app.config import LIVE_POINT_MS
 from app.hardware.loopback import format_table, run_loopback
 from app.plotting.compare import (GRID, VIEWS, GridPosition, LiveComparison,
                                   plot_comparison)
@@ -18,6 +29,7 @@ from app.waveforms.raster import get_scan
 
 OVERSAMPLE = 10  # AI samples recorded per AO sample
 POLL_MS = 100    # how often the GUI draws new data / checks for the end
+PREBUFFER_S = 0.3   # recording to have in hand before live playback starts
 GRID_POLL_MS = 200  # how often the idle Grid view measures ai0 / ai1
 
 
@@ -69,6 +81,9 @@ class LoopbackPanel(ttk.LabelFrame):
 
     # --- Run ------------------------------------------------------------------
     def start(self):
+        if self._live is not None:  # pressed while the recording is played back
+            self._skip = True
+            return
         if not self.session.ready:
             return
         try:
@@ -96,9 +111,12 @@ class LoopbackPanel(ttk.LabelFrame):
         self._set_view_buttons(False)  # the live plot is built for one view
         self.results.configure(text="")
         self._duration = len(waveform) / rate
+        self._prebuffer = min(int(PREBUFFER_S * rate * OVERSAMPLE), len(waveform) * OVERSAMPLE)
+        self._t_last = None  # playback clock; None until playback starts
+        self._skip = False   # set by the Run button to jump to the results
         self._worker = threading.Thread(target=work, daemon=True)
         self._worker.start()
-        self.run_button.configure(text=f"Running… ({self._duration:.1f} s)")
+        self.run_button.configure(text="Waiting for data…")
         self.session.set_busy(True)
         self.after(POLL_MS, self._poll)
 
@@ -107,31 +125,57 @@ class LoopbackPanel(ttk.LabelFrame):
         if self._worker is not None:
             self._worker.join()
             self._worker = None
+            self._live = None
             self.run_button.configure(text="Run")
             self._set_view_buttons(True)
             self.session.set_busy(False)
 
-    def _draw_live(self):
-        """Move recording pieces from the worker into the live plot."""
-        got = False
+    def _draw_live(self, recording_done):
+        """Take the recording pieces from the worker and play the live plot
+        forward: one output sample (slow motion) or the time since the last call."""
+        live = self._live
         while True:
             try:
-                self._live.add(self._chunks.get_nowait())
-                got = True
+                live.add(self._chunks.get_nowait())
             except queue.Empty:
                 break
-        if got:
-            self._live.draw()
-            left = self._duration * (1 - self._live.progress)
-            self.run_button.configure(text=f"Running… {self._live.progress:.0%} "
-                                           f"({left:.1f} s left)")
+
+        now = time.monotonic()
+        if self._t_last is None:  # wait for enough data before starting
+            if live.filled < self._prebuffer and not recording_done:
+                return
+            self._t_last = now  # playback starts here, at the first point
+        elif LIVE_POINT_MS > 0:
+            live.step(OVERSAMPLE)
+        else:
+            live.advance(now - self._t_last)
+        self._t_last = now
+        live.draw()
+
+        if LIVE_POINT_MS > 0:
+            left = (1 - live.progress) * len(live.sent) * LIVE_POINT_MS / 1000
+        else:
+            left = self._duration * (1 - live.progress)
+        text = f"Showing {live.progress:.0%} ({left:.0f} s left)"
+        if recording_done:
+            text += " – click to skip"
+            self.run_button.state(["!disabled"])  # the button skips now
+        self.run_button.configure(text=text)
 
     def _poll(self):
         if self._worker is None:  # finished via wait()
             return
-        self._draw_live()
-        if self._worker.is_alive():
-            self.after(POLL_MS, self._poll)
+        t_poll = time.monotonic()
+        # Check the worker before draining, so a finished worker's last
+        # pieces are always in the queue when we drain it
+        recording_done = not self._worker.is_alive()
+        self._draw_live(recording_done)
+        failed = recording_done and self._outcome[0] == "error"
+        playing = not failed and not self._skip and not self._live.caught_up
+        if not recording_done or playing:  # still recording, or still playing back
+            interval = LIVE_POINT_MS if LIVE_POINT_MS > 0 else POLL_MS
+            spent_ms = int((time.monotonic() - t_poll) * 1000)  # drawing counts too
+            self.after(max(1, interval - spent_ms), self._poll)
             return
         self._worker = None
         self._live = None

@@ -26,6 +26,7 @@ from matplotlib.backends.backend_tkagg import (  # noqa: E402
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 
 from app.config import CLOCK_RATE, RASTER_DIRECTION, SCAN_PATTERN  # noqa: E402
+from app.hardware.mydaq import AO_LIMIT_V  # noqa: E402
 from app.waveforms.raster import get_scan  # noqa: E402
 from app.waveforms.signals import (  # noqa: E402
     PATTERNS, SCAN_X, SCAN_Y, signal_options)
@@ -38,7 +39,6 @@ TESTS = {
     "time": "Outputs vs time",
     "path": "Beam path (X-Y)",
 }
-AO_LIMIT = 10.0  # myDAQ / OIM101 input range, volts
 
 
 class App(tk.Tk):
@@ -196,8 +196,9 @@ class App(tk.Tk):
         text = (f"ao0: {ao0.min():+.3f} to {ao0.max():+.3f} V\n"
                 f"ao1: {ao1.min():+.3f} to {ao1.max():+.3f} V\n"
                 f"Duration: {len(waveform) / CLOCK_RATE:.2f} s")
-        if peak > AO_LIMIT:
-            text += f"\n\nWARNING: {peak:.2f} V exceeds the ±{AO_LIMIT:g} V output range"
+        if peak > AO_LIMIT_V:
+            text += (f"\n\nWARNING: {peak:.2f} V exceeds the ±{AO_LIMIT_V:g} V output limit;"
+                     " Run will refuse it")
             self.status.configure(text=text, style="Warn.TLabel")
         else:
             self.status.configure(text=text, style="Status.TLabel")

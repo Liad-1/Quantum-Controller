@@ -135,8 +135,11 @@ class LiveComparison:
     """
     The graphs of the chosen view, filling in as the recording arrives.
 
-    add(chunk) appends aligned recording samples (m, 2); draw() updates the
-    lines (call it from the GUI thread, e.g. every 100 ms).
+    add(chunk) appends aligned recording samples (m, 2) as they arrive;
+    advance(seconds) moves the display through them at the recording's own
+    speed, so a burst of late data is played out instead of jumped over;
+    draw() shows everything up to that point (call advance + draw from the
+    GUI thread, e.g. every 100 ms).
     """
 
     def __init__(self, fig, canvas, sent, rate, oversample, view=TIME,
@@ -146,7 +149,9 @@ class LiveComparison:
         self.sent = sent
         self.rate, self.k = rate, oversample
         self.buffer = np.empty((len(sent) * oversample, 2))
-        self.filled = 0
+        self.filled = 0      # AI samples received
+        self.shown = 0       # AI samples displayed (never ahead of filled)
+        self._shown_f = 0.0  # same, with the fraction carried between draws
         self.t_ai = np.arange(len(self.buffer)) / (rate * oversample)
         self.recv_lines, self.transfer_points, self.cursors = [], [], []
         self.grid_view = None
@@ -180,15 +185,34 @@ class LiveComparison:
 
     @property
     def progress(self):
-        return self.filled / len(self.buffer)
+        """Fraction of the recording displayed so far."""
+        return self.shown / len(self.buffer)
+
+    @property
+    def caught_up(self):
+        """True when everything received so far is displayed."""
+        return self.shown >= self.filled
 
     def add(self, chunk):
         m = min(len(chunk), len(self.buffer) - self.filled)
         self.buffer[self.filled:self.filled + m] = chunk[:m]
         self.filled += m
 
+    def advance(self, seconds):
+        """Move the display forward by `seconds` of recording, but not past
+        what has arrived (it waits there for more)."""
+        self._shown_f = min(float(self.filled),
+                            self._shown_f + seconds * self.rate * self.k)
+        self.shown = int(self._shown_f)
+
+    def step(self, samples):
+        """Move the display forward by `samples` AI samples (slow motion),
+        but not past what has arrived."""
+        self.shown = min(self.filled, self.shown + samples)
+        self._shown_f = float(self.shown)
+
     def draw(self):
-        n, k = self.filled, self.k
+        n, k = self.shown, self.k
         if self.grid_view is not None:
             # Measured position: the last output period of the recording
             if n:

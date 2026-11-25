@@ -14,6 +14,31 @@ Hardware setup:
 import numpy as np
 
 from app import config
+from app.hardware.mydaq import AO_LIMIT_V
+
+
+class ScanConfigError(ValueError):
+    """The scan settings in config.py need voltages the outputs can't produce."""
+
+
+def check_scan_fits(queued_data, scale=None):
+    """
+    Raise ScanConfigError if the scan waveform (N, 2) needs more than the
+    ±AO_LIMIT_V the outputs allow on either axis.
+    """
+    scale = config.SCALE if scale is None else scale
+    problems = []
+    for ch, axis in enumerate(("X", "Y")):
+        lo, hi = float(queued_data[:, ch].min()), float(queued_data[:, ch].max())
+        if max(abs(lo), abs(hi)) > AO_LIMIT_V:
+            problems.append(
+                f"{axis} needs {lo:+.2f} to {hi:+.2f} V, but ao{ch} is limited to "
+                f"±{AO_LIMIT_V:g} V (at {scale[ch]:g} µm/V, {axis} can reach "
+                f"±{AO_LIMIT_V * scale[ch]:.0f} µm)")
+    if problems:
+        raise ScanConfigError(
+            "Scan grid doesn't fit the outputs:\n" + "\n".join(problems)
+            + "\n\nReduce SCAN_SIZE or move SCAN_CENTER in app/config.py.")
 
 
 def generate_raster_waveform(
@@ -161,12 +186,13 @@ def get_scan(pattern=None):
     """
     Generate the waveform using the scan settings in config.py.
     Returns the same values as generate_raster_waveform().
+    Raises ScanConfigError if the grid needs more than the outputs allow.
 
     pattern : 'raster' or 'serpentine', optional
         Overrides config.SCAN_PATTERN.
     """
     pattern = pattern or config.SCAN_PATTERN
-    return generate_raster_waveform(
+    scan = generate_raster_waveform(
         scan_center=config.SCAN_CENTER,
         scan_size=config.SCAN_SIZE,
         step_size=config.STEP_SIZE,
@@ -175,3 +201,5 @@ def get_scan(pattern=None):
         scan_type=config.SCAN_TYPE,
         serpentine=(pattern == 'serpentine'),
     )
+    check_scan_fits(scan[0])
+    return scan

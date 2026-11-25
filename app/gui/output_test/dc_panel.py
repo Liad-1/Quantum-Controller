@@ -3,19 +3,26 @@ DcPanel: point the mirror by hand with fixed voltages on ao0 (X) / ao1 (Y).
 
 Each − / + click moves one output by one scan pixel (STEP_SIZE / SCALE from
 config.py); holding a button repeats. "Go to" jumps to an X, Y position in
-micrometres, snapped to the nearest pixel. "Zero outputs" returns to 0 V.
+micrometres, snapped to the nearest pixel. Both stay inside the scan grid
+(get_scan() already guarantees the grid fits the output voltage limit); a
+move outside it is refused with a red message. "Zero outputs" returns to 0 V.
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 from app.config import SCALE, STEP_SIZE
-from app.hardware.mydaq import AO_LIMIT_V
+from app.waveforms.raster import get_scan
 
 AXES = ("X", "Y")
 STEP_V = [STEP_SIZE[ch] / SCALE[ch] for ch in range(2)]  # volts per pixel
 REPEAT_DELAY_MS = 400     # hold a ± button this long before it repeats
 REPEAT_INTERVAL_MS = 60   # then one step every this often
+EPS_UM = 1e-9             # tolerance for float rounding at the grid edge
+
+
+def _range_text(lo, hi):
+    return f"{lo:+.2f} to {hi:+.2f} µm"
 
 
 class DcPanel(ttk.LabelFrame):
@@ -24,6 +31,8 @@ class DcPanel(ttk.LabelFrame):
         self.session = session
         self.steps = [0, 0]   # position in whole pixels per channel (no float drift)
         self._repeat = None   # after() id while a ± button is held
+        _, x_um, y_um, _, _ = get_scan()
+        self.bounds_um = [(float(c.min()), float(c.max())) for c in (x_um, y_um)]
 
         self.value_labels = []
         for ch, axis in enumerate(AXES):
@@ -55,13 +64,20 @@ class DcPanel(ttk.LabelFrame):
         ttk.Button(self, text="Zero outputs", command=self.zero).grid(
             row=3, column=0, columnspan=4, sticky="w", pady=(8, 0))
 
+        # Red, and left out of the enable/disable loop so it stays red
+        self.error_label = ttk.Label(self, text="", style="Warn.TLabel",
+                                     wraplength=320, justify="left")
+        self.error_label.grid(row=4, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
         self.output_status = ttk.Label(self, text="", style="Status.TLabel")
-        self.output_status.grid(row=4, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        self.output_status.grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 0))
         step_text = ", ".join(f"{STEP_V[ch] * 1000:.2f} mV {AXES[ch]}" for ch in range(2))
+        range_text = ", ".join(f"{AXES[ch]} {_range_text(*self.bounds_um[ch])}"
+                               for ch in range(2))
         ttk.Label(self, style="Status.TLabel", justify="left",
                   text=f"One click = one pixel ({STEP_SIZE[0]:g} µm: {step_text}).\n"
-                       f"Hold to repeat. Limit ±{AO_LIMIT_V:g} V."
-                  ).grid(row=5, column=0, columnspan=4, sticky="w", pady=(4, 0))
+                       f"Hold to repeat. Range: the scan grid,\n{range_text}."
+                  ).grid(row=6, column=0, columnspan=4, sticky="w", pady=(4, 0))
 
         session.subscribe(self._update)
         self._update()
@@ -85,12 +101,22 @@ class DcPanel(ttk.LabelFrame):
             self._repeat = None
 
     def _step(self, ch, direction):
-        """Move one pixel; returns False at the limit or on an error."""
+        """Move one pixel; returns False at the grid edge or on an error."""
         steps = list(self.steps)
         steps[ch] += direction
-        if abs(steps[ch] * STEP_V[ch]) > AO_LIMIT_V:
-            return False  # stop at the limit
+        if not self._in_bounds(ch, steps[ch]):
+            here = self.steps[ch] * STEP_SIZE[ch]
+            self._show_error(f"{AXES[ch]} is at the edge of the scan grid ({here:+.2f} µm). "
+                             f"{AXES[ch]} range: {_range_text(*self.bounds_um[ch])}.")
+            return False
         return self._move(steps)
+
+    def _in_bounds(self, ch, steps):
+        lo, hi = self.bounds_um[ch]
+        return lo - EPS_UM <= steps * STEP_SIZE[ch] <= hi + EPS_UM
+
+    def _show_error(self, text):
+        self.error_label.configure(text=text)
 
     # --- Go to ----------------------------------------------------------------
     def _on_enter(self, event):
@@ -103,17 +129,15 @@ class DcPanel(ttk.LabelFrame):
         try:
             target_um = [float(var.get()) for var in self.targets]
         except ValueError:
-            messagebox.showerror("Invalid input", "X and Y must be numbers (µm).")
+            self._show_error("X and Y must be numbers in µm, e.g. 1.2 and -0.5.")
             return
         steps = [round(um / STEP_SIZE[ch]) for ch, um in enumerate(target_um)]
-        for ch in range(2):
-            if abs(steps[ch] * STEP_V[ch]) > AO_LIMIT_V:
-                reach = AO_LIMIT_V * SCALE[ch]
-                messagebox.showerror(
-                    "Invalid input",
-                    f"{AXES[ch]} = {target_um[ch]:g} µm is out of reach: "
-                    f"{AXES[ch]} can go to ±{reach:.0f} µm (±{AO_LIMIT_V:g} V).")
-                return
+        outside = [f"{AXES[ch]} = {target_um[ch]:.2f} µm is outside the scan grid "
+                   f"({AXES[ch]}: {_range_text(*self.bounds_um[ch])})."
+                   for ch in range(2) if not self._in_bounds(ch, steps[ch])]
+        if outside:
+            self._show_error("\n".join(outside))
+            return
         self._move(steps)
 
     # --- Output ---------------------------------------------------------------
@@ -129,6 +153,7 @@ class DcPanel(ttk.LabelFrame):
         v0, v1 = (steps[ch] * STEP_V[ch] for ch in range(2))
         if self._write(lambda: self.session.device.set_dc(v0, v1)):
             self.steps = steps
+            self._show_error("")   # a valid move clears the last error
             self.session.notify()  # updates this panel and the grid view
             return True
         return False
@@ -149,7 +174,8 @@ class DcPanel(ttk.LabelFrame):
         s = self.session
         state = ["!disabled"] if s.ready else ["disabled"]
         for child in _descendants(self):
-            if isinstance(child, (ttk.Entry, ttk.Button, ttk.Label)):
+            if (isinstance(child, (ttk.Entry, ttk.Button, ttk.Label))
+                    and child is not self.error_label):
                 child.state(state)
         if not s.ready:
             self._stop_repeat()
