@@ -15,3 +15,4 @@ SCAN_PATTERN     = 'raster'      # 'raster' (every line same direction) or
                                  # 'serpentine' (alternate direction each line)
 SCAN_TYPE        = 'matrix'      # 'matrix' (2D) or 'vector' (1D line)
 CLOCK_RATE       = 400           # samples per second output by the myDAQ
+MYDAQ_DEVICE     = 'myDAQ1'      # myDAQ selected by default in the Output Test tab

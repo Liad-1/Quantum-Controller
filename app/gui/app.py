@@ -1,7 +1,12 @@
 """
 Quantum Controller GUI for the myDAQ analog outputs.
 
-Choose the signal sent to ao0 and ao1 and a test; the plot updates as you go.
+Tabs:
+  * Signal Configuration - choose the signal sent to ao0 and ao1 and a test;
+    the plot updates as you go.
+  * Output Test          - connect to the myDAQ, set ao0 / ao1 by hand, and
+    send the configured signal while recording it back for comparison.
+
 Typed values (amplitude, frequency, offset, time window) apply on Enter.
 The plot appears in the window (with zoom/pan toolbar).
 
@@ -27,6 +32,7 @@ from app.waveforms.signals import (  # noqa: E402
 from app.plotting.ao_outputs import plot_ao_outputs  # noqa: E402
 from app.plotting.beam_path import plot_beam_path  # noqa: E402
 from app.gui.channel_panel import ChannelPanel  # noqa: E402
+from app.gui.output_test import OutputTestTab  # noqa: E402
 
 TESTS = {
     "time": "Outputs vs time",
@@ -54,12 +60,21 @@ class App(tk.Tk):
             self.scans[pattern], _, _, self.n_fast, self.n_slow = get_scan(pattern)
         n_samples = len(self.scans[PATTERNS[0]])
 
-        # --- Left: controls ---------------------------------------------------
-        controls = ttk.Frame(self, padding=12)
+        # --- Tabs -------------------------------------------------------------
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True)
+        signal_tab = ttk.Frame(notebook)
+        notebook.add(signal_tab, text="Signal Configuration")
+        self.output_tab = OutputTestTab(notebook, get_signal=self.build_waveform,
+                                        clock_rate=CLOCK_RATE)
+        notebook.add(self.output_tab, text="Output Test")
+        # Never leave voltage on the outputs when the app closes
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # --- Signal Configuration: controls on the left -----------------------
+        controls = ttk.Frame(signal_tab, padding=12)
         controls.pack(side="left", fill="y")
 
-        ttk.Label(controls, text="myDAQ Output Test",
-                  font=("Segoe UI", 14, "bold")).pack(anchor="w")
         ttk.Label(controls, style="Status.TLabel",
                   text=f"Scan: {self.n_fast} x {self.n_slow} px, "
                        f"{n_samples} samples @ {CLOCK_RATE} Hz, "
@@ -112,8 +127,8 @@ class App(tk.Tk):
                                 wraplength=320, justify="left")
         self.status.pack(anchor="w")
 
-        # --- Right: plot area -------------------------------------------------
-        plot_frame = ttk.Frame(self, padding=(0, 12, 12, 12))
+        # --- Signal Configuration: plot on the right --------------------------
+        plot_frame = ttk.Frame(signal_tab, padding=(0, 12, 12, 12))
         plot_frame.pack(side="right", fill="both", expand=True)
 
         self.figure = Figure(figsize=(9, 6), dpi=100)
@@ -124,6 +139,10 @@ class App(tk.Tk):
         self.bind("<Return>", lambda e: self.run())
         self._update_test_state()
         self.run()
+
+    def _on_close(self):
+        self.output_tab.shutdown()
+        self.destroy()
 
     def _update_manual(self):
         """Lock the channels on Scan X / Scan Y, or unlock them (manual)."""
@@ -143,22 +162,28 @@ class App(tk.Tk):
     def _update_test_state(self):
         self.t_window_entry.state(["!disabled"] if self.test.get() == "time" else ["disabled"])
 
+    def build_waveform(self):
+        """
+        The signal currently configured: (waveform (N, 2), ao0_name, ao1_name).
+        Raises ValueError on invalid parameters.
+        """
+        pattern = self.pattern.get()
+        ao0 = self.ao0.build(self.scans, CLOCK_RATE, pattern)
+        ao1 = self.ao1.build(self.scans, CLOCK_RATE, pattern)
+        return np.column_stack([ao0, ao1]), self.ao0.signal.get(), self.ao1.signal.get()
+
     def run(self):
         try:
-            pattern = self.pattern.get()
-            ao0 = self.ao0.build(self.scans, CLOCK_RATE, pattern)
-            ao1 = self.ao1.build(self.scans, CLOCK_RATE, pattern)
+            waveform, ao0_name, ao1_name = self.build_waveform()
             t_text = self.t_window.get().strip()
             t_window = float(t_text) if t_text else None
         except ValueError as err:
             messagebox.showerror("Invalid input", str(err))
             return
-
-        waveform = np.column_stack([ao0, ao1])
+        ao0, ao1 = waveform[:, 0], waveform[:, 1]
 
         self.figure.clear()
         ax = self.figure.add_subplot()
-        ao0_name, ao1_name = self.ao0.signal.get(), self.ao1.signal.get()
         if self.test.get() == "time":
             plot_ao_outputs(ax, waveform, CLOCK_RATE, t_window=t_window,
                             ao0_label=f"ao0 - {ao0_name}", ao1_label=f"ao1 - {ao1_name}")

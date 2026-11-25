@@ -12,9 +12,7 @@ WIRING (wires only):
 !! Keep this folder separate from the DIO test folders.
 """
 
-import contextlib
 import os
-import time
 
 import pytest
 
@@ -25,16 +23,11 @@ except ImportError as exc:
         "The 'nidaqmx' package is not installed. Run:  pip install nidaqmx"
     ) from exc
 import numpy as np  # installed together with nidaqmx
-from nidaqmx.constants import AcquisitionType, TerminalConfiguration
-from nidaqmx.errors import DaqError
 from nidaqmx.system import System
 
-DEVICE = os.environ.get("MYDAQ_DEVICE", "myDAQ1")
+from app.hardware.mydaq import MyDaq
 
-AO_LIMIT_V = 9.5        # software clamp on every AO value
-AO_SETTLE_S = 0.01      # wait after a DC change before measuring
-AI_RATE = 10_000        # samples/s per channel
-AI_SAMPLES = 100        # samples averaged per DC measurement
+DEVICE = os.environ.get("MYDAQ_DEVICE", "myDAQ1")
 
 CHANNELS = ("AO0->AI0", "AO1->AI1")
 DC_LEVELS = np.linspace(-9.0, 9.0, 11)        # +/-10 V input range
@@ -67,103 +60,15 @@ def pytest_collection_modifyitems(config, items):
 
 
 # --------------------------------------------------------------------------- #
-# Hardware helpers
+# Hardware helpers (the driver itself is app.hardware.mydaq.MyDaq)
 # --------------------------------------------------------------------------- #
-def _check_ao(values) -> None:
-    arr = np.asarray(values, dtype=float)
-    if np.any(np.abs(arr) > AO_LIMIT_V):
-        raise ValueError(
-            f"Refusing to output {arr.min():+.2f}..{arr.max():+.2f} V: "
-            f"limit is +/-{AO_LIMIT_V} V"
-        )
-
-
-class AnalogOut:
-    """AO0 + AO1. On-demand DC writes, plus a hardware-timed waveform mode."""
-
-    def __init__(self):
-        self._task = None
-        self._open()
-
-    def _open(self):
-        task = nidaqmx.Task("mydaq_analog_ao")
-        task.ao_channels.add_ao_voltage_chan(f"{DEVICE}/ao0:1", min_val=-10.0, max_val=10.0)
-        self._task = task
-
-    def set(self, v0: float, v1: float) -> None:
-        _check_ao([v0, v1])
-        self._task.write([float(v0), float(v1)])
-        time.sleep(AO_SETTLE_S)
-
-    @contextlib.contextmanager
-    def waveform(self, data, rate: float):
-        """Continuously play `data` (shape 2 x N, one row per AO) while inside the block."""
-        data = np.asarray(data, dtype=float)
-        _check_ao(data)
-        self.set(0.0, 0.0)
-        self._task.close()
-        self._task = None
-        task = nidaqmx.Task("mydaq_analog_ao_wave")
-        try:
-            task.ao_channels.add_ao_voltage_chan(f"{DEVICE}/ao0:1", min_val=-10.0, max_val=10.0)
-            task.timing.cfg_samp_clk_timing(
-                rate, sample_mode=AcquisitionType.CONTINUOUS, samps_per_chan=data.shape[1]
-            )
-            task.write(data.tolist(), auto_start=False)
-            task.start()
-            time.sleep(0.05)  # let the output settle into the waveform
-            yield
-        finally:
-            try:
-                task.stop()
-            except DaqError:
-                pass
-            task.close()
-            self._open()
-            self.set(0.0, 0.0)
-
-    def close(self):
-        if self._task is not None:
-            try:
-                self._task.write([0.0, 0.0])
-            except DaqError:
-                pass
-            self._task.close()
-            self._task = None
-
-
-class AnalogIn:
-    """AI0 + AI1. Each call opens a short finite acquisition."""
-
-    def read(self, samples: int = AI_SAMPLES, rate: float = AI_RATE,
-             range_v: float = 10.0) -> np.ndarray:
-        """Return raw samples, shape (2, samples): row 0 = AI0, row 1 = AI1."""
-        with nidaqmx.Task() as task:
-            task.ai_channels.add_ai_voltage_chan(
-                f"{DEVICE}/ai0:1",
-                terminal_config=TerminalConfiguration.DEFAULT,  # myDAQ AI is differential
-                min_val=-range_v, max_val=range_v,
-            )
-            task.timing.cfg_samp_clk_timing(
-                rate, sample_mode=AcquisitionType.FINITE, samps_per_chan=samples
-            )
-            data = task.read(number_of_samples_per_channel=samples,
-                             timeout=samples / rate + 5.0)
-        return np.asarray(data, dtype=float)
-
-    def measure(self, range_v: float = 10.0) -> np.ndarray:
-        """Averaged DC reading: array([AI0, AI1])."""
-        return self.read(range_v=range_v).mean(axis=1)
-
-
 class Loopback:
-    def __init__(self, ao: AnalogOut, ai: AnalogIn):
-        self.ao = ao
-        self.ai = ai
+    def __init__(self, daq: MyDaq):
+        self.daq = daq
 
     def apply(self, v0: float, v1: float, range_v: float = 10.0) -> np.ndarray:
-        self.ao.set(v0, v1)
-        return self.ai.measure(range_v=range_v)
+        self.daq.set_dc(v0, v1)
+        return self.daq.measure(range_v=range_v)
 
 
 # --------------------------------------------------------------------------- #
@@ -181,25 +86,20 @@ def device():
 
 
 @pytest.fixture(scope="session")
-def ao(device):
-    out = AnalogOut()
+def daq(device):
+    """The myDAQ's ao0/ao1 + ai0/ai1 (app.hardware.mydaq); outputs end at 0 V."""
+    d = MyDaq(DEVICE, reset=False)  # `device` already reset it
     try:
-        out.set(0.0, 0.0)
-        yield out
+        yield d
     finally:
-        out.close()
-
-
-@pytest.fixture(scope="session")
-def ai(device):
-    return AnalogIn()
+        d.close()
 
 
 @pytest.fixture
-def loop(ao, ai):
+def loop(daq):
     """Per-test loopback; always returns both outputs to 0 V afterwards."""
-    yield Loopback(ao, ai)
-    ao.set(0.0, 0.0)
+    yield Loopback(daq)
+    daq.zero()
 
 
 @pytest.fixture(scope="session")
@@ -208,14 +108,14 @@ def results(request):
     return request.config.stash[RESULTS_KEY]
 
 
-def _sweep(ao: AnalogOut, ai: AnalogIn, levels, range_v: float) -> dict:
+def _sweep(daq: MyDaq, levels, range_v: float) -> dict:
     """Step AO0 through `levels` and AO1 through the negated levels at the same time
     (opposite signs make swapped wires / crosstalk show up as big errors)."""
     measured = []
     for v in levels:
-        ao.set(v, -v)
-        measured.append(ai.measure(range_v=range_v))
-    ao.set(0.0, 0.0)
+        daq.set_dc(v, -v)
+        measured.append(daq.measure(range_v=range_v))
+    daq.zero()
     measured = np.array(measured)
     return {
         CHANNELS[0]: (np.asarray(levels), measured[:, 0]),
@@ -224,15 +124,15 @@ def _sweep(ao: AnalogOut, ai: AnalogIn, levels, range_v: float) -> dict:
 
 
 @pytest.fixture(scope="session")
-def dc_sweep(ao, ai):
+def dc_sweep(daq):
     """{channel: (set_volts, measured_volts)} on the +/-10 V input range."""
-    return _sweep(ao, ai, DC_LEVELS, range_v=10.0)
+    return _sweep(daq, DC_LEVELS, range_v=10.0)
 
 
 @pytest.fixture(scope="session")
-def low_range_sweep(ao, ai):
+def low_range_sweep(daq):
     """{channel: (set_volts, measured_volts)} on the +/-2 V input range."""
-    return _sweep(ao, ai, LOW_RANGE_LEVELS, range_v=2.0)
+    return _sweep(daq, LOW_RANGE_LEVELS, range_v=2.0)
 
 
 # --------------------------------------------------------------------------- #

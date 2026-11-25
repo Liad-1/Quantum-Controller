@@ -15,6 +15,10 @@ Run:
 import numpy as np
 import pytest
 
+from app.config import CLOCK_RATE
+from app.hardware.loopback import run_loopback
+from app.waveforms.raster import get_scan
+
 CHANNELS = ("AO0->AI0", "AO1->AI1")
 
 # ---- Pass limits (tighten once you know what your myDAQ achieves) ---------- #
@@ -157,10 +161,10 @@ def test_channels_independent(loop, v0, v1):
 # 7. Noise (slow)
 # --------------------------------------------------------------------------- #
 @pytest.mark.slow
-def test_noise(ao, ai, results):
-    ao.set(0.0, 0.0)
-    data = ai.read(samples=1000)
-    std = data.std(axis=1)
+def test_noise(daq, results):
+    daq.zero()
+    data = daq.read_ai(samples=1000)
+    std = data.std(axis=0)
     for ch, s in zip(CHANNELS, std):
         results[ch]["noise_mV"] = float(s * 1000)
     bad = [f"{ch}: {s * 1000:.2f} mV" for ch, s in zip(CHANNELS, std) if s > NOISE_MAX_V]
@@ -171,17 +175,17 @@ def test_noise(ao, ai, results):
 # 8. Sine waveform (slow)
 # --------------------------------------------------------------------------- #
 @pytest.mark.slow
-def test_sine_waveform(ao, ai, results):
+def test_sine_waveform(daq, results):
     n_out = int(round(SINE_RATE / SINE_FREQ_HZ)) * SINE_CYCLES_OUT
     t = np.arange(n_out) / SINE_RATE
     wave = SINE_AMP_V * np.sin(2 * np.pi * SINE_FREQ_HZ * t)
-    out = np.vstack([wave, -wave])  # AO1 inverted, so each channel is distinct
+    out = np.column_stack([wave, -wave])  # AO1 inverted, so each channel is distinct
 
-    with ao.waveform(out, SINE_RATE):
-        data = ai.read(samples=SINE_SAMPLES_IN, rate=SINE_RATE)
+    with daq.waveform(out, SINE_RATE):
+        data = daq.read_ai(samples=SINE_SAMPLES_IN, rate=SINE_RATE)
 
     problems = []
-    for ch, y in zip(CHANNELS, data):
+    for ch, y in zip(CHANNELS, data.T):
         freq, amp, max_jump = _analyze_sine(y, SINE_RATE)
         results[ch]["sine_freq"] = freq
         results[ch]["sine_amp"] = amp
@@ -196,3 +200,20 @@ def test_sine_waveform(ao, ai, results):
             problems.append(f"{ch}: jump of {max_jump:.3f} V between samples "
                             f"(max expected {SINE_MAX_JUMP_V:.3f} V) - glitch or dropout")
     assert not problems, "\n".join(problems)
+
+# --------------------------------------------------------------------------- #
+# 9. Configured scan through the loopback (slow)
+# --------------------------------------------------------------------------- #
+@pytest.mark.slow
+def test_configured_scan_loopback(daq):
+    """Play the scan from app/config.py once and record it back
+    (the same test as the GUI's Output Test > Send & receive)."""
+    result = run_loopback(daq, get_scan()[0], CLOCK_RATE)
+    problems = []
+    for c in result.channels:
+        if abs(c.gain - 1.0) > GAIN_TOL:
+            problems.append(f"{c.name}: gain {c.gain:.4f} (limit 1 +/- {GAIN_TOL})")
+        if abs(c.offset_mV) > OFFSET_TOL_V * 1000:
+            problems.append(f"{c.name}: offset {c.offset_mV:+.1f} mV "
+                            f"(limit +/-{OFFSET_TOL_V * 1000:.0f} mV)")
+    assert not problems, "\n".join(problems + result.notes)
