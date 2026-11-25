@@ -22,7 +22,8 @@ def generate_raster_waveform(
     step_size,
     scale,
     raster_direction='x',
-    scan_type='matrix'
+    scan_type='matrix',
+    serpentine=False
 ):
     """
     Generate raster scan voltage waveform for the OIM101 Fast Steering Mirror.
@@ -45,6 +46,11 @@ def generate_raster_waveform(
         Fast scan axis: 'x' (default) or 'y'.
     scan_type : str, optional
         'matrix' for 2D scan (default), 'vector' for 1D line scan.
+    serpentine : bool, optional
+        If True, alternate the fast-axis direction on every line
+        (left-to-right, then right-to-left, ...) so the fast axis steps back
+        down instead of jumping to the start of the next line. The slow axis
+        is unchanged. Default False (every line runs the same direction).
 
     Returns
     -------
@@ -135,12 +141,14 @@ def generate_raster_waveform(
     for i, v_s in enumerate(v_slow):
         i0 = i * n_fast_padded
         i1 = i0 + n_fast_padded
+        # Serpentine: odd lines run the fast axis in reverse
+        line = V_fast_padded[::-1] if (serpentine and i % 2) else V_fast_padded
         if raster_direction == 'x':
-            queued_data[i0:i1, 0] = V_fast_padded   # ao0 = X (fast)
+            queued_data[i0:i1, 0] = line             # ao0 = X (fast)
             queued_data[i0:i1, 1] = v_s              # ao1 = Y (slow)
         else:
             queued_data[i0:i1, 0] = v_s              # ao0 = X (slow)
-            queued_data[i0:i1, 1] = V_fast_padded    # ao1 = Y (fast)
+            queued_data[i0:i1, 1] = line             # ao1 = Y (fast)
 
     # Physical pixel coordinates (for image axes labels)
     x_coords = np.arange(start_V[0], end_V[0] + dV[0] * 0.5, dV[0]) * scale[0]
@@ -149,11 +157,15 @@ def generate_raster_waveform(
     return queued_data, x_coords, y_coords, n_fast, n_slow
 
 
-def get_scan():
+def get_scan(pattern=None):
     """
     Generate the waveform using the scan settings in config.py.
     Returns the same values as generate_raster_waveform().
+
+    pattern : 'raster' or 'serpentine', optional
+        Overrides config.SCAN_PATTERN.
     """
+    pattern = pattern or config.SCAN_PATTERN
     return generate_raster_waveform(
         scan_center=config.SCAN_CENTER,
         scan_size=config.SCAN_SIZE,
@@ -161,4 +173,5 @@ def get_scan():
         scale=config.SCALE,
         raster_direction=config.RASTER_DIRECTION,
         scan_type=config.SCAN_TYPE,
+        serpentine=(pattern == 'serpentine'),
     )

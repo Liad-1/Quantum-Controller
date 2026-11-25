@@ -1,7 +1,8 @@
 """
 Quantum Controller GUI for the myDAQ analog outputs.
 
-Choose the signal sent to ao0 and ao1, choose a test, and press Update.
+Choose the signal sent to ao0 and ao1 and a test; the plot updates as you go.
+Typed values (amplitude, frequency, offset, time window) apply on Enter.
 The plot appears in the window (with zoom/pan toolbar).
 
 Run from the project root:
@@ -19,9 +20,10 @@ from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.backends.backend_tkagg import (  # noqa: E402
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 
-from app.config import CLOCK_RATE  # noqa: E402
+from app.config import CLOCK_RATE, RASTER_DIRECTION, SCAN_PATTERN  # noqa: E402
 from app.waveforms.raster import get_scan  # noqa: E402
-from app.waveforms.signals import RASTER_X, RASTER_Y  # noqa: E402
+from app.waveforms.signals import (  # noqa: E402
+    PATTERNS, SCAN_X, SCAN_Y, signal_options)
 from app.plotting.ao_outputs import plot_ao_outputs  # noqa: E402
 from app.plotting.beam_path import plot_beam_path  # noqa: E402
 from app.gui.channel_panel import ChannelPanel  # noqa: E402
@@ -43,11 +45,14 @@ class App(tk.Tk):
         style = ttk.Style(self)
         if "vista" in style.theme_names():
             style.theme_use("vista")
-        style.configure("Run.TButton", font=("Segoe UI", 11, "bold"), padding=8)
         style.configure("Status.TLabel", foreground="#444")
         style.configure("Warn.TLabel", foreground="#c0392b")
 
-        self.raster, _, _, self.n_fast, self.n_slow = get_scan()
+        # Both scan patterns are built up front; they share size and timing.
+        self.scans = {}
+        for pattern in PATTERNS:
+            self.scans[pattern], _, _, self.n_fast, self.n_slow = get_scan(pattern)
+        n_samples = len(self.scans[PATTERNS[0]])
 
         # --- Left: controls ---------------------------------------------------
         controls = ttk.Frame(self, padding=12)
@@ -57,12 +62,30 @@ class App(tk.Tk):
                   font=("Segoe UI", 14, "bold")).pack(anchor="w")
         ttk.Label(controls, style="Status.TLabel",
                   text=f"Scan: {self.n_fast} x {self.n_slow} px, "
-                       f"{len(self.raster)} samples @ {CLOCK_RATE} Hz"
+                       f"{n_samples} samples @ {CLOCK_RATE} Hz, "
+                       f"fast axis {RASTER_DIRECTION.upper()}"
                   ).pack(anchor="w", pady=(0, 10))
 
-        self.ao0 = ChannelPanel(controls, "ao0  (FSM X)", RASTER_X)
+        # --- Scan pattern ---------------------------------------------------
+        scan_box = ttk.LabelFrame(controls, text="Scan pattern", padding=10)
+        scan_box.pack(fill="x", pady=4)
+        self.pattern = tk.StringVar(value=SCAN_PATTERN)
+        self.pattern_buttons = []
+        for pattern in PATTERNS:
+            button = ttk.Radiobutton(scan_box, text=pattern.capitalize(), value=pattern,
+                                     variable=self.pattern, command=self.run)
+            button.pack(side="left", padx=(0, 12))
+            self.pattern_buttons.append(button)
+        self.manual = tk.BooleanVar(value=False)
+        ttk.Checkbutton(scan_box, text="Manual (per channel)", variable=self.manual,
+                        command=self._update_manual).pack(side="right")
+
+        # Channels start locked on Scan X / Scan Y (manual mode off)
+        self.ao0 = ChannelPanel(controls, "ao0  (FSM X)", SCAN_X, [SCAN_X], enabled=False,
+                                on_change=self.run)
         self.ao0.pack(fill="x", pady=4)
-        self.ao1 = ChannelPanel(controls, "ao1  (FSM Y)", RASTER_Y)
+        self.ao1 = ChannelPanel(controls, "ao1  (FSM Y)", SCAN_Y, [SCAN_Y], enabled=False,
+                                on_change=self.run)
         self.ao1.pack(fill="x", pady=4)
 
         test_box = ttk.LabelFrame(controls, text="Test", padding=10)
@@ -70,7 +93,7 @@ class App(tk.Tk):
         self.test = tk.StringVar(value="time")
         for key, label in TESTS.items():
             ttk.Radiobutton(test_box, text=label, value=key, variable=self.test,
-                            command=self._update_test_state).pack(anchor="w", pady=1)
+                            command=self._on_test_change).pack(anchor="w", pady=1)
 
         window_row = ttk.Frame(test_box)
         window_row.pack(anchor="w", pady=(6, 0))
@@ -81,8 +104,9 @@ class App(tk.Tk):
         self.t_window_entry.pack(side="left", padx=4)
         ttk.Label(window_row, text="s  (empty = all)").pack(side="left")
 
-        ttk.Button(controls, text="Update", style="Run.TButton",
-                   command=self.run).pack(fill="x", pady=(14, 6))
+        ttk.Label(controls, style="Status.TLabel",
+                  text="Typed values apply when you press Enter."
+                  ).pack(anchor="w", pady=(10, 6))
 
         self.status = ttk.Label(controls, text="", style="Status.TLabel",
                                 wraplength=320, justify="left")
@@ -101,13 +125,29 @@ class App(tk.Tk):
         self._update_test_state()
         self.run()
 
+    def _update_manual(self):
+        """Lock the channels on Scan X / Scan Y, or unlock them (manual)."""
+        manual = self.manual.get()
+        # In manual mode each channel chooses its own pattern
+        for button in self.pattern_buttons:
+            button.state(["disabled"] if manual else ["!disabled"])
+        options = signal_options(fast_axis=RASTER_DIRECTION)
+        for panel, auto_signal in ((self.ao0, SCAN_X), (self.ao1, SCAN_Y)):
+            panel.set_manual(manual, options, self.pattern.get(), auto_signal)
+        self.run()
+
+    def _on_test_change(self):
+        self._update_test_state()
+        self.run()
+
     def _update_test_state(self):
         self.t_window_entry.state(["!disabled"] if self.test.get() == "time" else ["disabled"])
 
     def run(self):
         try:
-            ao0 = self.ao0.build(self.raster, CLOCK_RATE)
-            ao1 = self.ao1.build(self.raster, CLOCK_RATE)
+            pattern = self.pattern.get()
+            ao0 = self.ao0.build(self.scans, CLOCK_RATE, pattern)
+            ao1 = self.ao1.build(self.scans, CLOCK_RATE, pattern)
             t_text = self.t_window.get().strip()
             t_window = float(t_text) if t_text else None
         except ValueError as err:
