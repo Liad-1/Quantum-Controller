@@ -37,26 +37,10 @@ RESULTS_KEY = pytest.StashKey[dict]()
 
 
 # --------------------------------------------------------------------------- #
-# Options / markers
+# Results store (--quick and the "slow" marker live in tests/conftest.py)
 # --------------------------------------------------------------------------- #
-def pytest_addoption(parser):
-    parser.addoption(
-        "--quick", action="store_true", default=False,
-        help="Skip the slow noise and waveform tests",
-    )
-
-
 def pytest_configure(config):
-    config.addinivalue_line("markers", "slow: noise/waveform test (skipped with --quick)")
     config.stash[RESULTS_KEY] = {ch: {} for ch in CHANNELS}
-
-
-def pytest_collection_modifyitems(config, items):
-    if config.getoption("--quick"):
-        skip = pytest.mark.skip(reason="skipped with --quick")
-        for item in items:
-            if "slow" in item.keywords:
-                item.add_marker(skip)
 
 
 # --------------------------------------------------------------------------- #

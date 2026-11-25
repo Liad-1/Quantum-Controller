@@ -37,26 +37,10 @@ THRESHOLDS_KEY = pytest.StashKey[dict]()
 
 
 # --------------------------------------------------------------------------- #
-# Command-line option and markers
+# Results store (--quick and the "sweep" marker live in tests/conftest.py)
 # --------------------------------------------------------------------------- #
-def pytest_addoption(parser):
-    parser.addoption(
-        "--quick", action="store_true", default=False,
-        help="Skip the slow threshold-sweep tests",
-    )
-
-
 def pytest_configure(config):
-    config.addinivalue_line("markers", "sweep: threshold sweep test (skipped with --quick)")
     config.stash[THRESHOLDS_KEY] = {}
-
-
-def pytest_collection_modifyitems(config, items):
-    if config.getoption("--quick"):
-        skip = pytest.mark.skip(reason="skipped with --quick")
-        for item in items:
-            if "sweep" in item.keywords:
-                item.add_marker(skip)
 
 
 # --------------------------------------------------------------------------- #

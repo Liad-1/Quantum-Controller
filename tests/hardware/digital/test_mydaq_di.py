@@ -5,10 +5,10 @@ WIRING (wires only):
     AO0  -> DIO0 ... DIO7 (all tied together)
     AGND -> DGND
 
-Run:
-    pytest -v                 # everything (~a few seconds)
-    pytest -v --quick         # skip the threshold sweeps
-    MYDAQ_DEVICE=myDAQ2 pytest -v
+Run (from the repo root):
+    pytest -v --hardware digital              # everything (~a few seconds)
+    pytest -v --hardware digital --quick      # skip the threshold sweeps
+    MYDAQ_DEVICE=myDAQ2 pytest -v --hardware digital
 
 !! Never run DO / output tests with this wiring connected. !!
 """

@@ -7,9 +7,9 @@ WIRING (wires only):
 
 !! Remove ALL DIO wiring first (this drives up to +/-9 V). !!
 
-Run:
-    pytest -v             # everything
-    pytest -v --quick     # skip noise + waveform tests
+Run (from the repo root):
+    pytest -v --hardware analog             # everything
+    pytest -v --hardware analog --quick     # skip noise / waveform / scan tests
 """
 
 import numpy as np
