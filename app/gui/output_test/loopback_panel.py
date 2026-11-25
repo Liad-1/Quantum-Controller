@@ -144,7 +144,7 @@ class LoopbackPanel(ttk.LabelFrame):
         if self._t_last is None:  # wait for enough data before starting
             if live.filled < self._prebuffer and not recording_done:
                 return
-            self._t_last = now  # playback starts here, at the first point
+            self._t_last = self._t_start = now  # playback starts here, at the first point
         elif LIVE_POINT_MS > 0:
             live.step(OVERSAMPLE)
         else:
@@ -153,7 +153,10 @@ class LoopbackPanel(ttk.LabelFrame):
         live.draw()
 
         if LIVE_POINT_MS > 0:
-            left = (1 - live.progress) * len(live.sent) * LIVE_POINT_MS / 1000
+            # Per point: the setting, or the real pace if drawing is slower
+            shown_points = live.shown // OVERSAMPLE
+            pace = (now - self._t_start) / shown_points if shown_points else 0.0
+            left = (1 - live.progress) * len(live.sent) * max(LIVE_POINT_MS / 1000, pace)
         else:
             left = self._duration * (1 - live.progress)
         text = f"Showing {live.progress:.0%} ({left:.0f} s left)"
@@ -174,8 +177,8 @@ class LoopbackPanel(ttk.LabelFrame):
         playing = not failed and not self._skip and not self._live.caught_up
         if not recording_done or playing:  # still recording, or still playing back
             interval = LIVE_POINT_MS if LIVE_POINT_MS > 0 else POLL_MS
-            spent_ms = int((time.monotonic() - t_poll) * 1000)  # drawing counts too
-            self.after(max(1, interval - spent_ms), self._poll)
+            spent_ms = (time.monotonic() - t_poll) * 1000  # drawing counts too
+            self.after(max(1, round(interval - spent_ms)), self._poll)  # Tk needs whole ms
             return
         self._worker = None
         self._live = None
