@@ -13,7 +13,7 @@ Hardware setup:
 
 import numpy as np
 
-from quantum_controller import config
+from app import config
 
 
 def generate_raster_waveform(

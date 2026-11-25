@@ -6,7 +6,7 @@ The plot appears in the window (with zoom/pan toolbar).
 
 Run from the project root:
 
-    python -m quantum_controller.gui.app
+    python -m app.gui.app
 """
 
 import numpy as np
@@ -19,12 +19,12 @@ from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.backends.backend_tkagg import (  # noqa: E402
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 
-from quantum_controller.config import CLOCK_RATE  # noqa: E402
-from quantum_controller.waveforms.raster import get_scan  # noqa: E402
-from quantum_controller.waveforms.signals import RASTER_X, RASTER_Y  # noqa: E402
-from quantum_controller.plotting.ao_outputs import plot_ao_outputs  # noqa: E402
-from quantum_controller.plotting.beam_path import plot_beam_path  # noqa: E402
-from quantum_controller.gui.channel_panel import ChannelPanel  # noqa: E402
+from app.config import CLOCK_RATE  # noqa: E402
+from app.waveforms.raster import get_scan  # noqa: E402
+from app.waveforms.signals import RASTER_X, RASTER_Y  # noqa: E402
+from app.plotting.ao_outputs import plot_ao_outputs  # noqa: E402
+from app.plotting.beam_path import plot_beam_path  # noqa: E402
+from app.gui.channel_panel import ChannelPanel  # noqa: E402
 
 TESTS = {
     "time": "Outputs vs time",

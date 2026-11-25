@@ -5,7 +5,7 @@ ChannelPanel: signal selector and parameters for one analog output channel.
 import tkinter as tk
 from tkinter import ttk
 
-from quantum_controller.waveforms.signals import SIGNALS, USES_PARAMS, make_signal
+from app.waveforms.signals import SIGNALS, USES_PARAMS, make_signal
 
 
 class ChannelPanel(ttk.LabelFrame):
