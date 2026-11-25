@@ -1,7 +1,9 @@
 """
 Plot a loopback result: what was sent and what came back.
 
-Two views:
+Three views:
+    GRID     - the scan grid (blue) and the position measured on ai0 / ai1
+               (green), live; see GridPosition.
     TIME     - Sent and Received over time.
     TRANSFER - received vs sent, one plot per channel side by side, next to
                the ideal y = x line. Faults show up as shapes: tilted = gain,
@@ -15,11 +17,65 @@ plot_comparison - the final graphs from a LoopbackResult.
 
 import numpy as np
 
+from app.config import SCALE
+
 COLORS = ("royalblue", "tomato")  # channel 0, channel 1 (as in ao_outputs.py)
 
+GRID = "Grid position"
 TIME = "Over time"
 TRANSFER = "Sent vs received"
-VIEWS = [TIME, TRANSFER]
+VIEWS = [GRID, TIME, TRANSFER]
+
+
+class GridPosition:
+    """
+    The scan grid in micrometres (blue) and the measured position (green):
+    the voltages read on ai0 / ai1, converted with SCALE. set_volts(v0, v1)
+    moves the green point; it only redraws the marker, so it can follow
+    hold-to-repeat steps and a playing scan.
+    """
+
+    def __init__(self, fig, canvas, x_um, y_um):
+        self.canvas = canvas
+        fig.clear()
+        self.ax = ax = fig.add_subplot()
+        gx, gy = np.meshgrid(x_um, y_um)
+        ax.plot(gx.ravel(), gy.ravel(), ".", color="royalblue", ms=3, label="Grid points")
+        self.marker = ax.plot([], [], "o", color="limegreen", mec="darkgreen", ms=9,
+                              zorder=3, label="Current point")[0]
+        pad_x = max(0.05 * np.ptp(x_um), 0.1)
+        pad_y = max(0.05 * np.ptp(y_um), 0.1)
+        self.grid_lim = ((x_um.min() - pad_x, x_um.max() + pad_x),
+                         (y_um.min() - pad_y, y_um.max() + pad_y))
+        ax.set_xlim(self.grid_lim[0])
+        ax.set_ylim(self.grid_lim[1])
+        ax.set_box_aspect(1)
+        ax.set_xlabel("X (µm)")
+        ax.set_ylabel("Y (µm)")
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=2, frameon=False)
+        fig.subplots_adjust(top=0.92, bottom=0.16)  # room for the title and legend
+        self.set_volts(None)
+
+    def set_volts(self, v0, v1=None, message="Not connected"):
+        """
+        Move the green point to the measured voltages (ai0, ai1);
+        set_volts(None, message) hides it and shows `message` instead.
+        """
+        ax = self.ax
+        if v0 is None:
+            self.marker.set_data([], [])
+            ax.set_title(message)
+        else:
+            x, y = v0 * SCALE[0], v1 * SCALE[1]
+            self.marker.set_data([x], [y])
+            ax.set_title(f"Measured: X = {x:+.2f} µm, Y = {y:+.2f} µm")
+            # Keep a point outside the grid in view
+            for (lo, hi), value, set_lim in ((self.grid_lim[0], x, ax.set_xlim),
+                                             (self.grid_lim[1], y, ax.set_ylim)):
+                margin = 0.05 * (hi - lo)
+                set_lim(min(lo, value - margin), max(hi, value + margin))
+        self.canvas.draw_idle()
 
 
 def _short(label):
@@ -84,7 +140,8 @@ class LiveComparison:
     """
 
     def __init__(self, fig, canvas, sent, rate, oversample, view=TIME,
-                 sent_labels=("ao0", "ao1"), received_labels=("ai0", "ai1")):
+                 sent_labels=("ao0", "ao1"), received_labels=("ai0", "ai1"), grid=None):
+        """grid : (x_um, y_um) scan grid, needed for the GRID view."""
         self.canvas = canvas
         self.sent = sent
         self.rate, self.k = rate, oversample
@@ -92,8 +149,14 @@ class LiveComparison:
         self.filled = 0
         self.t_ai = np.arange(len(self.buffer)) / (rate * oversample)
         self.recv_lines, self.transfer_points, self.cursors = [], [], []
+        self.grid_view = None
 
         fig.clear()
+        if view == GRID:
+            self.grid_view = GridPosition(fig, canvas, *grid)
+            self.grid_view.set_volts(None, message="Waiting for data…")
+            canvas.draw()
+            return
         if view == TRANSFER:
             _, self.transfer_points = _setup_transfer(fig, sent, sent_labels,
                                                       received_labels)
@@ -126,6 +189,11 @@ class LiveComparison:
 
     def draw(self):
         n, k = self.filled, self.k
+        if self.grid_view is not None:
+            # Measured position: the last output period of the recording
+            if n:
+                self.grid_view.set_volts(*self.buffer[max(0, n - k):n].mean(axis=0))
+            return
         for ch, line in enumerate(self.recv_lines):
             line.set_data(self.t_ai[:n], self.buffer[:n, ch])
 

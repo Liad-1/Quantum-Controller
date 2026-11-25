@@ -12,10 +12,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from app.hardware.loopback import format_table, run_loopback
-from app.plotting.compare import TIME, VIEWS, LiveComparison, plot_comparison
+from app.plotting.compare import (GRID, VIEWS, GridPosition, LiveComparison,
+                                  plot_comparison)
+from app.waveforms.raster import get_scan
 
 OVERSAMPLE = 10  # AI samples recorded per AO sample
 POLL_MS = 100    # how often the GUI draws new data / checks for the end
+GRID_POLL_MS = 200  # how often the idle Grid view measures ai0 / ai1
 
 
 class LoopbackPanel(ttk.LabelFrame):
@@ -34,6 +37,10 @@ class LoopbackPanel(ttk.LabelFrame):
         self._last = None     # (result, ao0_name, ao1_name) of the last run
         self._chunks = queue.Queue()  # recording pieces from the worker thread
         self._live = None             # LiveComparison while running
+        self._grid = None             # GridPosition while the idle grid is shown
+        self._grid_job = None         # after() id of the grid measurement loop
+        _, x_um, y_um, _, _ = get_scan()
+        self._grid_um = (x_um, y_um)  # scan grid pixel positions (µm)
 
         ttk.Label(self, style="Status.TLabel", wraplength=320, justify="left",
                   text="Sends the signal from Signal Configuration once on ao0/ao1 "
@@ -42,13 +49,13 @@ class LoopbackPanel(ttk.LabelFrame):
                   ).pack(anchor="w")
         self.run_button = ttk.Button(self, text="Run", command=self.start)
         self.run_button.pack(fill="x", pady=(8, 4))
-        self.view = tk.StringVar(value=TIME)
+        self.view = tk.StringVar(value=GRID)
         view_row = ttk.Frame(self)
         view_row.pack(anchor="w")
         ttk.Label(view_row, text="View:").pack(side="left")
         self.view_buttons = [
             ttk.Radiobutton(view_row, text=name, value=name, variable=self.view,
-                            command=self._redraw)
+                            command=self._show_view)
             for name in VIEWS]
         for button in self.view_buttons:
             button.pack(side="left", padx=(6, 0))
@@ -57,8 +64,8 @@ class LoopbackPanel(ttk.LabelFrame):
         self.results.pack(anchor="w", pady=(6, 0))
 
         session.subscribe(self._update)
+        self._show_view()
         self._update()
-        self._show_placeholder()
 
     # --- Run ------------------------------------------------------------------
     def start(self):
@@ -82,8 +89,9 @@ class LoopbackPanel(ttk.LabelFrame):
         self._names = (ao0_name, ao1_name)
         self._outcome = None
         self._chunks = chunks
+        self._stop_grid()  # the live plot owns the figure (and the inputs) now
         self._live = LiveComparison(self.figure, self.canvas, waveform, rate, OVERSAMPLE,
-                                    view=self.view.get(),
+                                    view=self.view.get(), grid=self._grid_um,
                                     sent_labels=(f"ao0 - {ao0_name}", f"ao1 - {ao1_name}"))
         self._set_view_buttons(False)  # the live plot is built for one view
         self.results.configure(text="")
@@ -135,15 +143,24 @@ class LoopbackPanel(ttk.LabelFrame):
         if kind == "error":
             title = "Invalid input" if isinstance(value, ValueError) else "myDAQ error"
             messagebox.showerror(title, str(value))
-            self._show_placeholder()
-            return
-        self._last = (value, *self._names)
-        self.results.configure(text=format_table(value))
-        self._redraw()
+        else:
+            self._last = (value, *self._names)
+            self.results.configure(text=format_table(value))
+        self._show_view()
 
     # --- Display --------------------------------------------------------------
-    def _redraw(self):
+    def _show_view(self):
+        """Rebuild the plot for the selected view (not while a run draws live)."""
+        if self._live is not None:
+            return
+        self._stop_grid()
+        if self.view.get() == GRID:
+            self._grid = GridPosition(self.figure, self.canvas, *self._grid_um)
+            self.canvas.draw()
+            self._poll_grid()
+            return
         if self._last is None:
+            self._show_placeholder()
             return
         result, ao0_name, ao1_name = self._last
         self.figure.clear()
@@ -165,5 +182,35 @@ class LoopbackPanel(ttk.LabelFrame):
         for button in self.view_buttons:
             button.state(["!disabled"] if enabled else ["disabled"])
 
+    def _sync_grid(self):
+        """Measure ai0 / ai1 and put the green point there (idle Grid view)."""
+        if self._grid is None or self._live is not None:
+            return
+        device = self.session.device
+        if device is None:
+            self._grid.set_volts(None, message="Not connected")
+            return
+        if self.session.busy:
+            return  # another operation owns the device
+        try:
+            self._grid.set_volts(*device.measure())
+        except Exception as err:
+            self._grid.set_volts(None, message=f"Measurement failed: {err}")
+
+    def _poll_grid(self):
+        """Measure now and every GRID_POLL_MS while the idle grid is shown."""
+        self._grid_job = None
+        if self._grid is None:
+            return
+        self._sync_grid()
+        self._grid_job = self.after(GRID_POLL_MS, self._poll_grid)
+
+    def _stop_grid(self):
+        if self._grid_job is not None:
+            self.after_cancel(self._grid_job)
+            self._grid_job = None
+        self._grid = None
+
     def _update(self):
         self.run_button.state(["!disabled"] if self.session.ready else ["disabled"])
+        self._sync_grid()

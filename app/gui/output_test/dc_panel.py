@@ -129,7 +129,7 @@ class DcPanel(ttk.LabelFrame):
         v0, v1 = (steps[ch] * STEP_V[ch] for ch in range(2))
         if self._write(lambda: self.session.device.set_dc(v0, v1)):
             self.steps = steps
-            self._update()
+            self.session.notify()  # updates this panel and the grid view
             return True
         return False
 
