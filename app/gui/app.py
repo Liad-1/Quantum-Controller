@@ -1,7 +1,7 @@
 """
 Quantum Controller GUI for the myDAQ analog outputs.
 
-Choose the signal sent to ao0 and ao1, choose a test, and press Show Test.
+Choose the signal sent to ao0 and ao1, choose a test, and press Update.
 The plot appears in the window (with zoom/pan toolbar).
 
 Run from the project root:
@@ -81,7 +81,7 @@ class App(tk.Tk):
         self.t_window_entry.pack(side="left", padx=4)
         ttk.Label(window_row, text="s  (empty = all)").pack(side="left")
 
-        ttk.Button(controls, text="Show Test", style="Run.TButton",
+        ttk.Button(controls, text="Update", style="Run.TButton",
                    command=self.run).pack(fill="x", pady=(14, 6))
 
         self.status = ttk.Label(controls, text="", style="Status.TLabel",
