@@ -1,21 +1,8 @@
 """
-Test: plot the myDAQ analog outputs (ao0, ao1) as a function of time.
-
-Run directly to plot the raster scan defined in scan_waveform.py,
-or use plot_ao_outputs() from main.py.
+Plot the myDAQ analog outputs (ao0, ao1) as a function of time.
 """
 
-import sys
-from pathlib import Path
-
 import numpy as np
-import matplotlib.pyplot as plt
-
-# scan_waveform.py lives in ../extarnal
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "extarnal"))
-from scan_waveform import get_scan, CLOCK_RATE  # noqa: E402
-
-LINES_SHOWN = 5  # scan lines visible when run directly (pan/zoom to see the rest)
 
 
 def plot_ao_outputs(ax, waveform, clock_rate, t_window=None,
@@ -40,14 +27,3 @@ def plot_ao_outputs(ax, waveform, clock_rate, t_window=None,
     ax.set_ylabel("Voltage (V)")
     ax.legend(loc='upper left')
     ax.grid(True, alpha=0.3)
-
-
-if __name__ == "__main__":
-    # Scan settings live in scan_waveform.py — edit them there.
-    waveform, x_um, y_um, n_fast, n_slow = get_scan()
-
-    fig, ax = plt.subplots(figsize=(16, 5))
-    plot_ao_outputs(ax, waveform, CLOCK_RATE,
-                    t_window=LINES_SHOWN * (n_fast + 2) / CLOCK_RATE)
-    fig.tight_layout()
-    plt.show()

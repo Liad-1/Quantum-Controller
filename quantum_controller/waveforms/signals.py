@@ -2,13 +2,13 @@
 Signal shapes that can be sent to the myDAQ analog outputs (ao0, ao1).
 
 Every signal has the same number of samples as the raster scan from
-scan_waveform.py, played at CLOCK_RATE, so all channels share one time base.
+waveforms/raster.py, played at CLOCK_RATE, so all channels share one time base.
 """
 
 import numpy as np
 
-RASTER_X = "Raster scan X (scan_waveform)"
-RASTER_Y = "Raster scan Y (scan_waveform)"
+RASTER_X = "Raster scan X"
+RASTER_Y = "Raster scan Y"
 SINE     = "Sine"
 TRIANGLE = "Triangle"
 SAWTOOTH = "Sawtooth"
@@ -40,7 +40,7 @@ def make_signal(name, raster, clock_rate, amplitude=0.1, frequency=1.0, offset=0
     name : str
         One of SIGNALS.
     raster : np.ndarray, shape (N, 2)
-        Raster waveform from scan_waveform.get_scan(); also sets the length N.
+        Raster waveform from raster.get_scan(); also sets the length N.
     clock_rate : float
         Output sample rate in samples per second.
     amplitude : float

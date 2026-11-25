@@ -1,14 +1,13 @@
 """
-Manual testing app for the myDAQ analog outputs.
+Quantum Controller GUI for the myDAQ analog outputs.
 
-Choose the signal sent to ao0 and ao1, choose a test, and press Run.
+Choose the signal sent to ao0 and ao1, choose a test, and press Show Test.
 The plot appears in the window (with zoom/pan toolbar).
 
-    python main.py
-"""
+Run from the project root:
 
-import sys
-from pathlib import Path
+    python -m quantum_controller.gui.app
+"""
 
 import numpy as np
 import tkinter as tk
@@ -20,12 +19,12 @@ from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.backends.backend_tkagg import (  # noqa: E402
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "extarnal"))
-from scan_waveform import get_scan, CLOCK_RATE  # noqa: E402
-
-from signals import SIGNALS, USES_PARAMS, RASTER_X, RASTER_Y, make_signal  # noqa: E402
-from plot_ao_outputs import plot_ao_outputs  # noqa: E402
-from plot_beam_path import plot_beam_path  # noqa: E402
+from quantum_controller.config import CLOCK_RATE  # noqa: E402
+from quantum_controller.waveforms.raster import get_scan  # noqa: E402
+from quantum_controller.waveforms.signals import RASTER_X, RASTER_Y  # noqa: E402
+from quantum_controller.plotting.ao_outputs import plot_ao_outputs  # noqa: E402
+from quantum_controller.plotting.beam_path import plot_beam_path  # noqa: E402
+from quantum_controller.gui.channel_panel import ChannelPanel  # noqa: E402
 
 TESTS = {
     "time": "Outputs vs time",
@@ -34,55 +33,10 @@ TESTS = {
 AO_LIMIT = 10.0  # myDAQ / OIM101 input range, volts
 
 
-class ChannelPanel(ttk.LabelFrame):
-    """Signal selector and parameters for one analog output channel."""
-
-    def __init__(self, master, title, default_signal):
-        super().__init__(master, text=title, padding=10)
-        self.signal = tk.StringVar(value=default_signal)
-        self.params = {
-            "amplitude": tk.StringVar(value="0.1"),
-            "frequency": tk.StringVar(value="1"),
-            "offset":    tk.StringVar(value="0"),
-        }
-        units = {"amplitude": "V", "frequency": "Hz", "offset": "V"}
-
-        ttk.Label(self, text="Signal").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        combo = ttk.Combobox(self, textvariable=self.signal, values=SIGNALS,
-                             state="readonly", width=28)
-        combo.grid(row=0, column=1, columnspan=2, sticky="ew", pady=(0, 6))
-        combo.bind("<<ComboboxSelected>>", lambda e: self._update_state())
-
-        self.entries = {}
-        for row, key in enumerate(self.params, start=1):
-            ttk.Label(self, text=key.capitalize()).grid(row=row, column=0, sticky="w", pady=2)
-            entry = ttk.Entry(self, textvariable=self.params[key], width=10)
-            entry.grid(row=row, column=1, sticky="w", pady=2)
-            ttk.Label(self, text=units[key]).grid(row=row, column=2, sticky="w", padx=(4, 0))
-            self.entries[key] = entry
-
-        self.columnconfigure(1, weight=1)
-        self._update_state()
-
-    def _update_state(self):
-        used = USES_PARAMS[self.signal.get()]
-        for key, entry in self.entries.items():
-            entry.state(["!disabled"] if key in used else ["disabled"])
-
-    def build(self, raster, clock_rate):
-        values = {}
-        for key, var in self.params.items():
-            try:
-                values[key] = float(var.get())
-            except ValueError:
-                raise ValueError(f"{self.cget('text')}: '{var.get()}' is not a valid {key}")
-        return make_signal(self.signal.get(), raster, clock_rate, **values)
-
-
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("myDAQ Manual Testing")
+        self.title("Quantum Controller")
         self.geometry("1350x750")
         self.minsize(1000, 600)
 

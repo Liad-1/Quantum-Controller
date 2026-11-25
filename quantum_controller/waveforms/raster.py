@@ -12,20 +12,8 @@ Hardware setup:
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 
-
-# ---------------------------------------------------------------------------
-# Scan settings — the single place to change the scan.
-# plot_ao_outputs.py and plot_beam_path.py read these through get_scan().
-# ---------------------------------------------------------------------------
-SCAN_CENTER      = [0, 0]        # um
-SCAN_SIZE        = [5, 5]        # um
-STEP_SIZE        = [0.1, 0.1]    # um (100 nm pixels)
-SCALE            = [14, 19]      # um/V (60x air objective)
-RASTER_DIRECTION = 'x'           # fast axis: 'x' or 'y'
-SCAN_TYPE        = 'matrix'      # 'matrix' (2D) or 'vector' (1D line)
-CLOCK_RATE       = 400           # samples per second output by the myDAQ
+from quantum_controller import config
 
 
 def generate_raster_waveform(
@@ -163,57 +151,14 @@ def generate_raster_waveform(
 
 def get_scan():
     """
-    Generate the waveform using the scan settings defined at the top of
-    this file. Returns the same values as generate_raster_waveform().
+    Generate the waveform using the scan settings in config.py.
+    Returns the same values as generate_raster_waveform().
     """
     return generate_raster_waveform(
-        scan_center=SCAN_CENTER,
-        scan_size=SCAN_SIZE,
-        step_size=STEP_SIZE,
-        scale=SCALE,
-        raster_direction=RASTER_DIRECTION,
-        scan_type=SCAN_TYPE,
+        scan_center=config.SCAN_CENTER,
+        scan_size=config.SCAN_SIZE,
+        step_size=config.STEP_SIZE,
+        scale=config.SCALE,
+        raster_direction=config.RASTER_DIRECTION,
+        scan_type=config.SCAN_TYPE,
     )
-
-
-def plot_waveform(queued_data, title="FSM Raster Waveform"):
-    """
-    Plot the generated voltage waveform for both AO channels.
-
-    Parameters
-    ----------
-    queued_data : np.ndarray, shape (N, 2)
-        Output of generate_raster_waveform().
-    title : str
-        Plot title.
-    """
-    fig, axes = plt.subplots(2, 1, figsize=(12, 5), sharex=True)
-    t = np.arange(len(queued_data))
-
-    axes[0].plot(t, queued_data[:, 0], color='royalblue')
-    axes[0].set_ylabel("ao0  X voltage (V)")
-    axes[0].set_title(title)
-
-    axes[1].plot(t, queued_data[:, 1], color='tomato')
-    axes[1].set_ylabel("ao1  Y voltage (V)")
-    axes[1].set_xlabel("Sample index")
-
-    plt.tight_layout()
-    plt.show()
-
-
-# ---------------------------------------------------------------------------
-# Example
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-
-    waveform, x_um, y_um, nx, ny = get_scan()
-
-    print(f"Waveform shape : {waveform.shape}   (total samples x 2 channels)")
-    print(f"Scan grid      : {nx} x {ny} pixels")
-    print(f"X voltage range: [{waveform[:, 0].min():.3f},  {waveform[:, 0].max():.3f}] V")
-    print(f"Y voltage range: [{waveform[:, 1].min():.3f},  {waveform[:, 1].max():.3f}] V")
-    print(f"X coordinates  : {x_um[0]:.2f} to {x_um[-1]:.2f} um")
-    print(f"Y coordinates  : {y_um[0]:.2f} to {y_um[-1]:.2f} um")
-
-    plot_waveform(waveform)
